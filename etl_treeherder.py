@@ -9,12 +9,12 @@
 from __future__ import unicode_literals
 
 from mohg.hg_mozilla_org import HgMozillaOrg
+from motreeherder.treeherder import TreeHerder
 from pyLibrary.debugs import startup, constants
 from pyLibrary.debugs.logs import Log
 from pyLibrary.env import http
 from pyLibrary.times.dates import Date
 from pyLibrary.times.durations import DAY
-from treeherder import TreeHerder
 
 
 def find_some_work(th):
