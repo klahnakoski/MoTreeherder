@@ -8,23 +8,31 @@
 #
 from __future__ import unicode_literals
 
+from mohg.hg_mozilla_org import HgMozillaOrg
 from pyLibrary.debugs import startup, constants
 from pyLibrary.debugs.logs import Log
 from pyLibrary.env import http
 from pyLibrary.times.dates import Date
+from pyLibrary.times.durations import DAY
 from treeherder import TreeHerder
 
 
 def find_some_work(th):
+    # th.get_markup("fx-team", "036f62007472", "B8kS5IJ5Rom8l-kcSIRIlA")
+    # th.get_markup("mozilla-inbound", "971c1ee26cad", "fNuzNmZxS6m3i_p9jDh8iA")
+
     # GET SOME TASKS
     result = http.post_json(url="http://activedata.allizom.org/query", data={
         "from": "task",
         "select": ["build.branch", "build.revision", "task.id"],
-        "where": {"lt": {"task.run.start_time": Date.today().unix}},
+        "where": {"and": [
+            {"gt": {"task.run.start_time": (Date.today() - DAY).unix}},
+            {"exists": "build.revision"},
+            {"exists": "build.branch"}
+        ]},
         "format": "list"
     })
 
-    th.get_markup("fx-team", "036f62007472", "B8kS5IJ5Rom8l-kcSIRIlA")
 
     # TRY TO GET THEM OUT OF OUR CACHE
     for r in result.data:
@@ -39,6 +47,7 @@ def main():
         constants.set(settings.constants)
         Log.start(settings.debug)
 
+        hg = HgMozillaOrg(settings.hg)
         th = TreeHerder(settings=settings)
         find_some_work(th)
     except Exception, e:

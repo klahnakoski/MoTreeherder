@@ -8,14 +8,14 @@
 # Author: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
 
-from __future__ import unicode_literals
-from __future__ import division
 from __future__ import absolute_import
-
+from __future__ import division
+from __future__ import unicode_literals
 
 import re
 from copy import copy
 
+from pyLibrary import convert
 from pyLibrary.debugs.logs import Log
 from pyLibrary.dot import coalesce, wrap, Dict, unwraplist, Null
 from pyLibrary.env import http, elasticsearch
@@ -24,7 +24,7 @@ from pyLibrary.meta import cache, use_settings
 from pyLibrary.queries import jx
 from pyLibrary.strings import expand_template
 from pyLibrary.times.dates import Date
-from pyLibrary.times.durations import HOUR, DAY, SECOND
+from pyLibrary.times.durations import HOUR, DAY
 
 RESULT_SET_URL = "https://treeherder.mozilla.org/api/project/{{branch}}/resultset/?format=json&count=1000&full=true&short_revision__in={{revision}}"
 FAILURE_CLASSIFICATION_URL = "https://treeherder.mozilla.org/api/failureclassification/"
@@ -32,21 +32,20 @@ REPO_URL = "https://treeherder.mozilla.org:443/api/repository/"
 JOBS_URL = "https://treeherder.mozilla.org/api/project/{{branch}}/jobs/?count=2000&result_set_id__in={{result_set_id}}"
 
 DETAILS_URL = "https://treeherder.mozilla.org/api/jobdetail/?job_id__in={{job_id}}&repository={{branch}}"
-NOTES_URL = "https://treeherder.mozilla.org/api/project/{{branch}}/note/?job_id__in={{job_id}}"
+NOTES_URL = "https://treeherder.mozilla.org/api/project/{{branch}}/note/?job_id={{job_id}}"
 JOB_BUG_MAP = "https://treeherder.mozilla.org/api/project/{{branch}}/bug-job-map/?job_id__in={{job_id}}"
 
 
 class TreeHerder(object):
     @use_settings
-    def __init__(self, use_cache=True, settings=None):
+    def __init__(self, hg, use_cache=True, settings=None):
         self.settings = settings
         self.failure_classification = {c.id: c.name for c in http.get_json(FAILURE_CLASSIFICATION_URL)}
         self.repo = {c.id: c.name for c in http.get_json(REPO_URL)}
-        # self.hg = hg
+        self.hg = hg
         self.cache = elasticsearch.Cluster(settings.elasticsearch).get_or_create_index(settings.elasticsearch)
 
-    @cache(duration=HOUR)
-    def get_job_results(self, branch, revision):
+    def _get_job_results_from_th(self, branch, revision):
         results = http.get_json(expand_template(RESULT_SET_URL, {"branch": branch, "revision": revision[0:12:]})).results
 
         output = []
@@ -63,17 +62,24 @@ class TreeHerder(object):
 
             stars = []
             for _, ids in jx.groupby(jobs.id, size=40):
-                stars.extend(http.get_json(expand_template(JOB_BUG_MAP, {"branch": branch, "job_id": ",".join(map(unicode, ids))})).results),
-            stars = {k: list(v) for k, v in jx.groupby(stars, "job_id")}
+                response = http.get_json(expand_template(JOB_BUG_MAP, {"branch": branch, "job_id": ",".join(map(unicode, ids))}))
+                stars.extend(response),
+            stars = {k.job_id: list(v) for k, v in jx.groupby(stars, "job_id")}
+
+            notes = []
+            for jid in set([j.id for j in jobs if j.failure_classification_id != 1] + stars.keys()):
+                response = http.get_json(expand_template(NOTES_URL, {"branch": branch, "job_id": unicode(jid)}))
+                notes.extend(response),
+            notes = {k.job_id: list(v) for k, v in jx.groupby(notes, "job_id")}
 
             for j in jobs:
-                output.append(self._normalize_job_result(branch, revision, j, details, stars))
+                output.append(self._normalize_job_result(branch, revision, j, details, notes, stars))
         if output:
             self.cache.extend({"id": "-".join([c.repo.branch, unicode(c.job.id)]), "value": c} for c in output)
             self.cache.flush()
         return output
 
-    def _normalize_job_result(self, branch, revision, job, details, stars):
+    def _normalize_job_result(self, branch, revision, job, details, notes, stars):
         job = wrap(copy(job))
         output = Dict()
 
@@ -123,10 +129,10 @@ class TreeHerder(object):
             output.repo.branch = branch
             output.repo.revision = revision
             output.repo.revision12=revision[:12]
-        output.job.timing.submit = _scrub(job, "submit_timestamp")
-        output.job.timing.start = _scrub(job, "start_timestamp")
-        output.job.timing.end = _scrub(job, "end_timestamp")
-        output.job.timing.last_modified = _scrub(job, "last_modified")
+        output.job.timing.submit = Date(_scrub(job, "submit_timestamp"))
+        output.job.timing.start = Date(_scrub(job, "start_timestamp"))
+        output.job.timing.end = Date(_scrub(job, "end_timestamp"))
+        output.job.timing.last_modified = Date(_scrub(job, "last_modified"))
 
         # IGNORED
         job.job_group_id = None
@@ -152,29 +158,30 @@ class TreeHerder(object):
         output.task.id = coalesce(*map(_extract_task_id, output.details.url))
 
         # ATTACH NOTES (RESOLVED BY BUG...)
-        # notes = http.get_json(expand_template(NOTES_URL, {"branch": output.repo.branch, "job_id": job.id}))
-        # for n in notes:
-        #     n.note = n.note.strip()
-        #     if not n.note:
-        #         continue
-        #
-        #     # LOOK UP REVISION IN REPO
-        #     fix = re.findall(r'[0-9A-Fa-f]{12}', n.note)
-        #     if fix:
-        #         rev = self.hg.get_revision(Dict(
-        #             changeset={"id": fix[0]},
-        #             branch={"name": job.build.branch}
-        #         ))
-        #         n.revision = rev.changeset.id
-        #         n.bug_id = self.hg._extract_bug_id(rev.changeset.description)
-        #
-        #     output.notes += [{
-        #         "note": n.note,
-        #         "revision": n.revision,
-        #         "bug_id": n.bug_id,
-        #         "who": n.who,
-        #         "timestamp": n.timestamp
-        #     }]
+        for n in notes.get(output.job.id, Null):
+            note = coalesce(n.note.strip(), n.text.strip())
+            if note:
+                # LOOK UP REVISION IN REPO
+                fix = re.findall(r'[0-9A-Fa-f]{12}', note)
+                if fix:
+                    rev = self.hg.get_revision(Dict(
+                        changeset={"id": fix[0]},
+                        branch={"name": job.build.branch}
+                    ))
+                    n.revision = rev.changeset.id
+                    n.bug_id = self.hg._extract_bug_id(rev.changeset.description)
+            else:
+                note = None
+
+            output.notes += [{
+                "note": note,
+                "status": coalesce(n.active_status, n.status),
+                "revision": n.revision,
+                "bug_id": n.bug_id,
+                "who": n.who,
+                "failure_classification": self.failure_classification[n.failure_classification_id],
+                "timestamp": Date(coalesce(n.note_timestamp, n.timestamp, n.created))
+            }]
 
         # ATTACH STAR INFO
         for s in stars.get(output.job.id, Null):
@@ -191,39 +198,45 @@ class TreeHerder(object):
     @cache(duration=HOUR)
     def get_markup(self, branch, revision, task_id=None, buildername=None):
         # TRY CACHE
+        if not branch or not revision:
+            Log.error("expecting branch and revision")
 
-        if task_id:
-            _filter = {"term": {"task.id": task_id}}
-        else:
-            _filter = {"term": {"ref_data_name": buildername}}
-
-        query = {
-            "query": {"filtered": {
-                "query": {"match_all": {}},
-                "filter": {"and": [
-                    _filter,
-                    {"term": {"repo.branch": branch}},
-                    {"term": {"repo.revision": revision}},
-                    # LOCATE ONLY THE REALLY NEW, OR REALLY OLD
-                    {"not": {"range": {"etl.timestamp": {"gt": (Date.now() - DAY).unix, "lte": (Date.now() - HOUR).unix}}}}
-                ]}
-            }},
-            "size": 10,
-        }
-        try:
-            docs = self.cache.search(query, timeout=120).hits.hits
-            if not docs:
-                pass
-            elif len(docs) == 1:
-                Log.note("Used ES cache to get details on {{value}}", value=coalesce(task_id, buildername))
-                return docs[0]._source
+        if self.settings.use_cache:
+            if task_id:
+                _filter = {"term": {"task.id": task_id}}
             else:
-                Log.warning("expecting no more than one document")
-        except Exception, e:
-            Log.warning("Bad ES call, fall back to TH", e)
+                _filter = {"term": {"ref_data_name": buildername}}
+
+            query = {
+                "query": {"filtered": {
+                    "query": {"match_all": {}},
+                    "filter": {"and": [
+                        _filter,
+                        {"term": {"repo.branch": branch}},
+                        {"prefix": {"repo.revision": revision}},
+                        {"or": [
+                            {"range": {"etl.timestamp": {"gte": (Date.now() - HOUR).unix}}},
+                            {"range": {"job.timing.last_modified": {"lt": (Date.now() - DAY).unix}}}
+                        ]}
+                    ]}
+                }},
+                "size": 10000,
+            }
+            try:
+                docs = self.cache.search(query, timeout=120).hits.hits
+                if not docs:
+                    convert.value2json(query)
+                    pass
+                elif len(docs) == 1:
+                    Log.note("Used ES cache to get details on {{value}}", value=coalesce(task_id, buildername))
+                    return docs[0]._source
+                else:
+                    Log.warning("expecting no more than one document")
+            except Exception, e:
+                Log.warning("Bad ES call, fall back to TH", e)
 
         detail = None
-        job_results = self.get_job_results(branch, revision)
+        job_results = self._get_job_results_from_th(branch, revision)
         for job_result in job_results:
             # MATCH TEST RUN BY UID DOES NOT EXIST, SO WE USE THE ARCANE BUILDER NAME
             # PLUS THE MATCHING START/END TIMES

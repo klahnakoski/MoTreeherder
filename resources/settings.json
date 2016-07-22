@@ -12,7 +12,10 @@
 		"debug": false,
 		"limit_replicas": false
 	},
-	"constants":{
+	"hg": {
+		"$ref":"//../mohg/resources/settings.json"
+	},
+	"constants": {
 		"pyLibrary.env.http.default_headers": {
 			"Referer": "https://github.com/klahnakoski/MoTreeherder",
 			"User-Agent": "MoTreeherder"
