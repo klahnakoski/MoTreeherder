@@ -1,5 +1,5 @@
 {
-	"flask":{
+	"flask": {
 		"host": "0.0.0.0",
 		"port": 5000,
 		"debug": false,
@@ -20,7 +20,34 @@
 		}
 	},
 	"hg": {
-		"$ref":"//../../mohg/resources/settings.json"
+		"use_cache": true,
+		"hg": {
+			"url": "https://hg.mozilla.org"
+		},
+		"branches": {
+			"host": "http://activedata.allizom.org",
+			"port": 9200,
+			"index": "branches",
+			"type": "branch",
+			"timeout": 300,
+			"schema": {
+				"$ref": "../../mohg/resources/branch.json"
+			},
+			"debug": false,
+			"limit_replicas": true
+		},
+		"repo": {
+			"host": "http://activedata.allizom.org",
+			"port": 9200,
+			"index": "repo",
+			"type": "revision",
+			"timeout": 300,
+			"schema": {
+				"$ref": "../../mohg/resources/revision.json"
+			},
+			"debug": false,
+			"limit_replicas": false
+		}
 	},
 	"constants": {
 		"pyLibrary.env.http.default_headers": {
