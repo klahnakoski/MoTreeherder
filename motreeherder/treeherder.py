@@ -29,7 +29,7 @@ from pyLibrary.times.timer import Timer
 
 DEBUG = True
 
-RESULT_SET_URL = "https://treeherder.mozilla.org/api/project/{{branch}}/resultset/?format=json&count=1000&full=true&short_revision__in={{revision}}"
+RESULT_SET_URL = "https://treeherder.mozilla.org/api/project/{{branch}}/resultset/?format=json&count=1000&full=True&short_revision__in={{revision}}"
 FAILURE_CLASSIFICATION_URL = "https://treeherder.mozilla.org/api/failureclassification/"
 REPO_URL = "https://treeherder.mozilla.org:443/api/repository/"
 JOBS_URL = "https://treeherder.mozilla.org/api/project/{{branch}}/jobs/?count=2000&offset={{offset}}&result_set_id__in={{result_set_id}}"
@@ -43,6 +43,7 @@ class TreeHerder(object):
     @use_settings
     def __init__(self, hg, rate_limit, use_cache=True, cache=None, settings=None):
         self.settings = settings
+        self.settings.schema = SCHEMA
         self.failure_classification = {c.id: c.name for c in http.get_json(FAILURE_CLASSIFICATION_URL)}
         self.repo = {c.id: c.name for c in http.get_json(REPO_URL)}
         self.hg = hg
@@ -195,7 +196,7 @@ class TreeHerder(object):
             else:
                 output.repo.branch = branch
                 output.repo.revision = revision
-                output.repo.revision12=revision[:12]
+                output.repo.revision12 = revision[:12]
             output.job.timing.submit = Date(_scrub(job, "submit_timestamp"))
             output.job.timing.start = Date(_scrub(job, "start_timestamp"))
             output.job.timing.end = Date(_scrub(job, "end_timestamp"))
@@ -360,7 +361,6 @@ def _scrub(record, name):
 
 
 def _extract_task_id(url):
-
     if "taskcluster.net" not in url:
         return None
 
@@ -371,3 +371,82 @@ def _extract_task_id(url):
         return None
 
 
+SCHEMA = {
+    "settings": {
+        "index.number_of_replicas": 1,
+        "index.number_of_shards": 30
+    },
+    "mappings": {
+        "job": {
+            "_source": {
+                "compress": True
+            },
+            "_id": {
+                "index": "not_analyzed",
+                "type": "string",
+                "store": True
+            },
+            "_all": {
+                "enabled": False
+            },
+            "dynamic_templates": [
+                {
+                    "default_ids": {
+                        "mapping": {
+                            "index": "not_analyzed",
+                            "type": "string",
+                            "doc_values": True
+                        },
+                        "match": "id"
+                    }
+                },
+                {
+                    "default_strings": {
+                        "mapping": {
+                            "index": "not_analyzed",
+                            "type": "string",
+                            "doc_values": True
+                        },
+                        "match_mapping_type": "string",
+                        "match": "*"
+                    }
+                },
+                {
+                    "default_doubles": {
+                        "mapping": {
+                            "index": "not_analyzed",
+                            "type": "double",
+                            "doc_values": True
+                        },
+                        "match_mapping_type": "double",
+                        "match": "*"
+                    }
+                },
+                {
+                    "default_longs": {
+                        "mapping": {
+                            "index": "not_analyzed",
+                            "type": "long",
+                            "doc_values": True
+                        },
+                        "match_mapping_type": "long|integer",
+                        "match_pattern": "regex",
+                        "path_match": ".*"
+                    }
+                }
+            ],
+            "properties": {
+                "notes": {
+                    "type": "nested"
+                },
+                "stars": {
+                    "type": "nested"
+                },
+                "details": {
+                    "type": "nested"
+                }
+            }
+        }
+    }
+
+}
