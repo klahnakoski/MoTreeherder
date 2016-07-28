@@ -18,45 +18,34 @@ from werkzeug.contrib.fixers import HeaderRewriterFix
 from werkzeug.wrappers import Response
 
 from mohg.hg_mozilla_org import HgMozillaOrg
-from motreeherder.treeherder import TreeHerder
 from pyLibrary import convert
 from pyLibrary.debugs import constants, startup
 from pyLibrary.debugs.exceptions import Except
 from pyLibrary.debugs.logs import Log
-from pyLibrary.dot import Dict, unwraplist
+from pyLibrary.dot import Dict
+from pyLibrary.meta import cache
+from pyLibrary.times.dates import Date
+from pyLibrary.times.durations import HOUR
 from pyLibrary.times.timer import Timer
 
 app = Flask(__name__)
 
 
-class TreeherderService(TreeHerder):
+class TreeherderRequestLoggingService(object):
     """
-    JOB LOOKUP SERVICE, USING ES AS CACHE, AND TH AS MAIN SOURCE
+    Used by other processes to determine if they should make a call to Treeherder
+    """
 
-    EXPECTING THE FOLLOWING PARAMETERS
-        branch,
-        revision,
-        task_id,
-        buildername,
-        timestamp
-    """
+    @cache(duration=HOUR)
+    def log_first_request(self, branch, revision):
+        return Date.now().unix
 
     def get_treeherder_job(self):
         try:
             with Timer("Process Request"):
                 args = Dict(**flask.request.args)
-
-                # IS THE branch/revision PENDING?
-
-                result = self.get_markup(
-                    unwraplist(args.branch),
-                    unwraplist(args.revision),
-                    unwraplist(args.task_id),
-                    unwraplist(args.buildername),
-                    unwraplist(args.timestamp)
-                )
-
-                response_data = convert.unicode2utf8(convert.value2json(result))
+                timestamp = self.log_first_request(self, args.get("branch"), args.get("revision"))
+                response_data = str(timestamp)
                 return Response(
                     response_data,
                     status=200,
@@ -100,7 +89,7 @@ if __name__ == "__main__":
 
         # SETUP TREEHERDER ENDPOINT
         hg = HgMozillaOrg(use_cache=True, settings=config.hg)
-        th = TreeherderService(hg, settings=config.treeherder)
+        th = TreeherderRequestLoggingService(hg, settings=config.treeherder)
         app.add_url_rule('/treeherder', None, th.get_treeherder_job, methods=['GET'])
 
         HeaderRewriterFix(app, remove_headers=['Date', 'Server'])
