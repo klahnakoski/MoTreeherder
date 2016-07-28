@@ -20,7 +20,7 @@
 		}
 	},
 	"hg": {
-		"$ref":"//../mohg/resources/settings.json"
+		"$ref":"//../../mohg/resources/settings.json"
 	},
 	"constants": {
 		"pyLibrary.env.http.default_headers": {
