@@ -1,16 +1,19 @@
 {
-	"use_cache": true,
-	"elasticsearch": {
-		"host": "http://localhost",
-		"port": 9200,
-		"index": "treeherder",
-		"type": "job",
-		"timeout": 300,
-		"schema": {
-			"$ref": "//treeherder.json"
-		},
-		"debug": false,
-		"limit_replicas": false
+	"treeherder": {
+		"use_cache": true,
+		"rate_limit": 55,
+		"cache": {
+			"host": "http://localhost",
+			"port": 9200,
+			"index": "treeherder",
+			"type": "job",
+			"timeout": 300,
+			"schema": {
+				"$ref": "//treeherder.json"
+			},
+			"debug": false,
+			"limit_replicas": false
+		}
 	},
 	"hg": {
 		"$ref":"//../mohg/resources/settings.json"
@@ -20,5 +23,12 @@
 			"Referer": "https://github.com/klahnakoski/MoTreeherder",
 			"User-Agent": "MoTreeherder"
 		}
+	},
+	"flask":{
+		"host": "0.0.0.0",
+		"port": 5000,
+		"debug": false,
+		"threaded": true,
+		"processes": 1
 	}
 }

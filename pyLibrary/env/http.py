@@ -38,7 +38,7 @@ from pyLibrary.queries import jx
 from pyLibrary.thread.threads import Thread, Lock
 from pyLibrary.times.durations import SECOND, Duration
 
-DEBUG=True
+DEBUG = False
 FILE_SIZE_LIMIT = 100 * 1024 * 1024
 MIN_READ_SIZE = 8 * 1024
 ZIP_REQUEST = False
