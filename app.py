@@ -98,7 +98,7 @@ if __name__ == "__main__":
         constants.set(config.constants)
         Log.start(config.debug)
 
-        # SETUP TREEHERDER CACHE
+        # SETUP TREEHERDER ENDPOINT
         hg = HgMozillaOrg(use_cache=True, settings=config.hg)
         th = TreeherderService(hg, settings=config.treeherder)
         app.add_url_rule('/treeherder', None, th.get_treeherder_job, methods=['GET'])

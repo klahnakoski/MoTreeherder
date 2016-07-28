@@ -1,9 +1,16 @@
 {
+	"flask":{
+		"host": "0.0.0.0",
+		"port": 5000,
+		"debug": false,
+		"threaded": true,
+		"processes": 1
+	},
 	"treeherder": {
 		"use_cache": true,
 		"rate_limit": 55,
 		"cache": {
-			"host": "http://localhost",
+			"host": "http://activedata.allizom.org",
 			"port": 9200,
 			"index": "treeherder",
 			"type": "job",
@@ -21,11 +28,7 @@
 			"User-Agent": "MoTreeherder"
 		}
 	},
-	"flask":{
-		"host": "0.0.0.0",
-		"port": 5000,
-		"debug": false,
-		"threaded": true,
-		"processes": 1
+	"debug":{
+
 	}
 }
